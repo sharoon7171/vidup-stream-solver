@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VidUP Stream Resolver</title>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.20/dist/hls.min.js"></script>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    html, body { height: 100%; margin: 0; overflow: hidden; }
+    body { background: #090b0f; color: #e8eef5; display: grid; grid-template-rows: auto auto minmax(0, 1fr); height: 100dvh; }
+    header { padding: 8px 12px; border-bottom: 1px solid #1d2630; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    input, button, select { background: #121820; color: inherit; border: 1px solid #273241; border-radius: 8px; padding: 6px 10px; font-size: 13px; }
+    button { cursor: pointer; }
+    button:disabled { opacity: .5; }
+    .hint { color: #8aa0b5; font-size: 12px; padding: 4px 12px; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    main { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, 28%); gap: 8px; padding: 8px 12px 12px; min-height: 0; }
+    video { width: 100%; height: 100%; min-height: 0; background: #000; border-radius: 10px; grid-column: 1 / -1; object-fit: contain; }
+    pre { background: #10151c; border: 1px solid #1d2630; border-radius: 8px; padding: 8px 10px; font-size: 10px; line-height: 1.35; overflow: auto; white-space: pre-wrap; word-break: break-word; margin: 0; min-height: 0; }
+    @media (max-width: 900px) { main { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, 18%) minmax(0, 18%); } }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>VidUP Stream Resolver</strong>
+    <select id="type"><option value="movie">Movie</option><option value="tv">TV</option></select>
+    <input id="contentId" value="941109" size="10" placeholder="TMDB id">
+    <input id="season" value="1" size="3" placeholder="S" hidden>
+    <input id="episode" value="1" size="3" placeholder="E" hidden>
+    <select id="server"></select>
+    <button id="run">Decode &amp; play</button>
+  </header>
+  <p class="hint" id="pathHint"></p>
+  <main>
+    <video id="video" controls playsinline></video>
+    <pre id="status">Ready.</pre>
+    <pre id="debug"></pre>
+  </main>
+  <script>
+    const $ = (id) => document.getElementById(id)
+    const video = $('video'), status = $('status'), debug = $('debug'), pathHint = $('pathHint')
+    const btn = $('run'), typeSelect = $('type'), contentId = $('contentId')
+    const seasonInput = $('season'), episodeInput = $('episode'), serverSelect = $('server')
+    const presets = { movie: { id: '941109' }, tv: { id: '1396', season: '1', episode: '1' } }
+    let hls, session = null
+
+    const pathLabel = () => {
+      const id = contentId.value.trim()
+      return typeSelect.value === 'tv'
+        ? `/tv/${id}/${seasonInput.value.trim()}/${episodeInput.value.trim()}`
+        : `/movie/${id}`
+    }
+
+    const manifestUrl = (streamUrl) => `/api/hls?url=${encodeURIComponent(streamUrl)}`
+
+    const syncType = () => {
+      const tv = typeSelect.value === 'tv'
+      seasonInput.hidden = episodeInput.hidden = !tv
+      const p = presets[typeSelect.value]
+      contentId.value = p.id
+      if (tv) { seasonInput.value = p.season; episodeInput.value = p.episode }
+      pathHint.textContent = `Path: ${pathLabel()}`
+      session = null
+    }
+
+    const setBusy = (on) => { btn.disabled = serverSelect.disabled = on }
+
+    const fillServers = (servers, selectedIndex) => {
+      const keep = serverSelect.value
+      serverSelect.replaceChildren(...servers.map((s, i) => {
+        const o = document.createElement('option')
+        o.value = String(i)
+        o.textContent = s.description ? `${s.name} — ${s.description}` : s.name
+        return o
+      }))
+      serverSelect.value = keep && servers[keep] ? keep : String(selectedIndex ?? 0)
+    }
+
+    const stop = () => {
+      if (hls) { hls.destroy(); hls = null }
+      video.removeAttribute('src')
+      video.load()
+    }
+
+    const play = (streamUrl) => {
+      if (hls) { hls.destroy(); hls = null }
+      const src = manifestUrl(streamUrl)
+      if (window.Hls?.isSupported()) {
+        hls = new Hls()
+        hls.on(Hls.Events.ERROR, (_, d) => {
+          if (!d.fatal) return
+          const extra = d.response?.code ? ` HTTP ${d.response.code}` : ''
+          status.textContent = `HLS ${d.type}: ${d.details}${extra}`
+        })
+        hls.loadSource(src)
+        hls.attachMedia(video)
+        hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch((e) => { status.textContent = String(e) }))
+        return
+      }
+      video.src = src
+      video.play().catch((e) => { status.textContent = String(e) })
+    }
+
+    const applyResult = (data) => {
+      debug.textContent = JSON.stringify(data, null, 2)
+      if (!data.ok) {
+        stop()
+        session = null
+        status.textContent = `Failed at ${data.stage || 'unknown'}: ${data.error || 'unknown'}`
+        if (data.servers?.length) fillServers(data.servers, serverSelect.value)
+        return false
+      }
+      session = {
+        contentPath: data.contentPath,
+        type: data.type,
+        servers: data.servers,
+        activeIndex: data.selectedServer?.index ?? 0,
+      }
+      if (data.servers?.length) fillServers(data.servers, session.activeIndex)
+      if (!data.streamUrl) {
+        status.textContent = 'Stream URL missing'
+        return false
+      }
+      const title = data.source?.title
+      const name = data.selectedServer?.name || 'stream'
+      status.textContent = title ? `${title} — ${name}` : `Playing ${name}`
+      play(data.streamUrl)
+      return true
+    }
+
+    const streamQuery = () => {
+      const qs = new URLSearchParams({ id: contentId.value.trim(), type: typeSelect.value })
+      if (typeSelect.value === 'tv') {
+        qs.set('season', seasonInput.value.trim())
+        qs.set('episode', episodeInput.value.trim())
+      }
+      return qs
+    }
+
+    btn.onclick = async () => {
+      debug.textContent = ''
+      setBusy(true)
+      status.textContent = 'Finding available servers…'
+      try {
+        applyResult(await (await fetch(`/api/stream?${streamQuery()}`)).json())
+      } catch (e) {
+        stop()
+        session = null
+        status.textContent = String(e.message || e)
+        debug.textContent = String(e.stack || e)
+      } finally {
+        setBusy(false)
+      }
+    }
+
+    serverSelect.onchange = async () => {
+      if (!session) return
+      const index = Number(serverSelect.value)
+      if (index === session.activeIndex) return
+      const server = session.servers[index]
+      const prev = session.activeIndex
+      setBusy(true)
+      status.textContent = `Switching to ${server.name}…`
+      try {
+        const data = await (await fetch('/api/server', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contentPath: session.contentPath,
+            type: session.type,
+            data: server.data,
+            serverName: server.name,
+            serverIndex: index,
+          }),
+        })).json()
+        debug.textContent = JSON.stringify({ ...data, servers: session.servers }, null, 2)
+        if (!data.ok) {
+          serverSelect.value = String(prev)
+          status.textContent = `${server.name} failed — kept previous server`
+          return
+        }
+        session.activeIndex = index
+        if (!data.streamUrl) {
+          status.textContent = 'Stream URL missing'
+          return
+        }
+        status.textContent = `Playing ${server.name} (${session.contentPath})`
+        play(data.streamUrl)
+      } catch {
+        serverSelect.value = String(prev)
+        status.textContent = `${server.name} failed — kept previous server`
+      } finally {
+        setBusy(false)
+      }
+    }
+
+    typeSelect.onchange = syncType
+    contentId.oninput = seasonInput.oninput = episodeInput.oninput = () => {
+      pathHint.textContent = `Path: ${pathLabel()}`
+    }
+    syncType()
+  </script>
+</body>
+</html>
