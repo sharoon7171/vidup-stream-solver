@@ -6,126 +6,318 @@
   <title>VidUP Stream Resolver</title>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.20/dist/hls.min.js"></script>
   <style>
-    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
-    html, body { height: 100%; margin: 0; overflow: hidden; }
-    body { background: #090b0f; color: #e8eef5; display: grid; grid-template-rows: auto auto minmax(0, 1fr); height: 100dvh; }
-    header { padding: 8px 12px; border-bottom: 1px solid #1d2630; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-    input, button, select { background: #121820; color: inherit; border: 1px solid #273241; border-radius: 8px; padding: 6px 10px; font-size: 13px; }
-    button { cursor: pointer; }
-    button:disabled { opacity: .5; }
-    .hint { color: #8aa0b5; font-size: 12px; padding: 4px 12px; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    main { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, 28%); gap: 8px; padding: 8px 12px 12px; min-height: 0; }
-    video { width: 100%; height: 100%; min-height: 0; background: #000; border-radius: 10px; grid-column: 1 / -1; object-fit: contain; }
-    pre { background: #10151c; border: 1px solid #1d2630; border-radius: 8px; padding: 8px 10px; font-size: 10px; line-height: 1.35; overflow: auto; white-space: pre-wrap; word-break: break-word; margin: 0; min-height: 0; }
-    @media (max-width: 900px) { main { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, 18%) minmax(0, 18%); } }
+    :root {
+      color-scheme: dark;
+      font-family: Inter, system-ui, sans-serif;
+      --bg: #0a0c10;
+      --surface: #11151c;
+      --border: #1e2733;
+      --text: #eef2f7;
+      --muted: #8b9cb0;
+      --accent: #5b9cf5;
+      --accent-dim: #2a4160;
+    }
+    * { box-sizing: border-box; margin: 0; }
+    html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); }
+    .app {
+      display: grid;
+      grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+      height: 100dvh;
+      min-height: 0;
+    }
+    .side {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding: 20px 16px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      min-height: 0;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+    .brand { flex-shrink: 0; }
+    .brand h1 { font-size: 16px; font-weight: 600; letter-spacing: -.02em; }
+    .brand p { margin-top: 6px; font-size: 12px; line-height: 1.5; color: var(--muted); }
+    .brand a { color: var(--accent); text-decoration: none; }
+    .brand a:hover { text-decoration: underline; }
+    #form {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+    .field label { font-size: 11px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+    .row { display: flex; gap: 8px; min-width: 0; }
+    input, select, button {
+      font: inherit;
+      color: inherit;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 14px;
+      line-height: 1.25;
+      min-height: 38px;
+    }
+    input { width: 100%; min-width: 0; }
+    input:focus, select:focus { outline: 2px solid var(--accent-dim); border-color: var(--accent); }
+    select { width: 100%; cursor: pointer; }
+    .tv-fields { display: none; }
+    .tv-fields.show { display: flex; flex-direction: column; gap: 6px; }
+    .tv-fields input { flex: 1; text-align: center; min-width: 0; }
+    button.primary {
+      width: 100%;
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #061018;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button.primary:hover:not(:disabled) { filter: brightness(1.08); }
+    button.primary:disabled { opacity: .55; cursor: default; }
+    .guide { font-size: 12px; line-height: 1.55; color: var(--muted); flex-shrink: 0; }
+    .guide a { color: var(--accent); text-decoration: none; }
+    .guide a:hover { text-decoration: underline; }
+    .guide strong { color: var(--text); font-weight: 600; display: block; margin-top: 10px; font-size: 11px; text-transform: none; letter-spacing: 0; }
+    .guide strong:first-child { margin-top: 0; }
+    .guide code { font-size: 11px; color: #b8c8da; }
+    .path-block { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; min-width: 0; }
+    .path-block label { font-size: 11px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+    .path {
+      font-size: 11px;
+      color: var(--muted);
+      padding: 8px 10px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-family: ui-monospace, monospace;
+      word-break: break-all;
+    }
+    .link-box { min-height: 0; }
+    .link-box[hidden] { display: none; }
+    .link-row {
+      display: flex;
+      gap: 8px;
+      align-items: stretch;
+      min-width: 0;
+    }
+    .link-row a {
+      flex: 1;
+      min-width: 0;
+      font-size: 11px;
+      font-family: ui-monospace, monospace;
+      color: var(--accent);
+      text-decoration: none;
+      padding: 8px 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .link-row a:hover { text-decoration: underline; }
+    .link-row button {
+      flex-shrink: 0;
+      cursor: pointer;
+      font-size: 12px;
+      padding: 8px 12px;
+    }
+    .main {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      min-width: 0;
+      padding: 16px;
+      gap: 12px;
+      overflow: hidden;
+    }
+    .stage {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      position: relative;
+    }
+    video { width: 100%; height: 100%; object-fit: contain; background: #000; }
+    .empty {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 14px;
+      pointer-events: none;
+    }
+    .empty.hide { display: none; }
+    .servers { min-height: 0; }
+    .servers[hidden] { display: none; }
+    .servers-label {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin-bottom: 8px;
+    }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; max-height: 88px; overflow-y: auto; overscroll-behavior: contain; }
+    .chip {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 7px 12px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+    }
+    .chip:hover:not(.wait):not(.busy) { border-color: var(--accent); }
+    .chip.on { border-color: var(--accent); background: var(--accent-dim); color: var(--text); }
+    .chip.wait { opacity: .45; cursor: default; }
+    .chip.busy { opacity: .6; pointer-events: none; }
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%) translateY(12px);
+      background: #1a2230;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 16px;
+      font-size: 13px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .2s, transform .2s;
+      z-index: 10;
+      max-width: min(90vw, 420px);
+      text-align: center;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    @media (max-width: 900px) {
+      .app { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+      .side {
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        padding: 14px 16px;
+        gap: 12px;
+        max-height: 46dvh;
+      }
+      .brand p { font-size: 11px; line-height: 1.45; }
+      #form {
+        display: grid;
+        grid-template-columns: minmax(110px, 130px) minmax(0, 1fr);
+        grid-template-areas:
+          "type id"
+          "tv tv"
+          "play play";
+        gap: 10px;
+        align-items: end;
+      }
+      #form .field:nth-child(1) { grid-area: type; }
+      #form .field:nth-child(2) { grid-area: id; }
+      #form .tv-fields { grid-area: tv; }
+      #form .primary { grid-area: play; }
+      .guide { display: none; }
+      .main { padding: 12px; gap: 10px; }
+      .stage { min-height: 180px; }
+    }
+    @media (max-width: 520px) {
+      .side { max-height: 42dvh; }
+      #form { grid-template-columns: 1fr; grid-template-areas: "type" "id" "tv" "play"; }
+      .link-row { flex-direction: column; }
+      .link-row a { white-space: normal; word-break: break-all; }
+      .link-row button { width: 100%; }
+    }
   </style>
 </head>
 <body>
-  <header>
-    <strong>VidUP Stream Resolver</strong>
-    <select id="type"><option value="movie">Movie</option><option value="tv">TV</option></select>
-    <input id="contentId" value="941109" size="10" placeholder="TMDB id">
-    <input id="season" value="1" size="3" placeholder="S" hidden>
-    <input id="episode" value="1" size="3" placeholder="E" hidden>
-    <select id="server"></select>
-    <button id="run">Decode &amp; play</button>
-  </header>
-  <p class="hint" id="pathHint"></p>
-  <main>
-    <video id="video" controls playsinline></video>
-    <pre id="status">Ready.</pre>
-    <pre id="debug"></pre>
-  </main>
+  <div class="app">
+    <aside class="side">
+      <div class="brand">
+        <h1>VidUP Stream Resolver</h1>
+        <p>Turns a TMDB ID into a playable HLS stream from <a href="https://vidup.to/" target="_blank" rel="noopener">vidup.to</a>. It reads the title page, runs VidUP’s decode logic, probes hosts, and plays the first link that works.</p>
+      </div>
+      <form id="form">
+        <div class="field">
+          <label for="type">Type</label>
+          <select id="type"><option value="movie">Movie</option><option value="tv">TV episode</option></select>
+        </div>
+        <div class="field">
+          <label for="contentId">TMDB ID</label>
+          <input id="contentId" value="941109" placeholder="e.g. 941109" inputmode="numeric">
+        </div>
+        <div class="field tv-fields" id="tvFields">
+          <label>Season / Episode</label>
+          <div class="row">
+            <input id="season" value="1" placeholder="S" inputmode="numeric">
+            <input id="episode" value="1" placeholder="E" inputmode="numeric">
+          </div>
+        </div>
+        <button type="submit" class="primary" id="play">Play</button>
+      </form>
+      <div class="path-block">
+        <label for="pathHint">VidUP path</label>
+        <div class="path" id="pathHint" role="textbox" aria-readonly="true">/movie/941109</div>
+      </div>
+      <div class="guide">
+        <strong>Finding IDs</strong> — search on <a href="https://www.themoviedb.org/" target="_blank" rel="noopener">themoviedb.org</a>. The number in the URL is what you enter (<code>/movie/941109</code> → 941109, <code>/tv/1396</code> → 1396).
+        <strong>What happens</strong> — the resolver requests that path on vidup.to, decodes stream hosts, and plays the first working HLS link.
+        <strong>Switching hosts</strong> — after Play, pick another server under the player.
+      </div>
+    </aside>
+    <div class="main">
+      <div class="stage">
+        <video id="video" controls playsinline></video>
+        <div class="empty" id="empty">TMDB ID → vidup.to path → HLS playback</div>
+      </div>
+      <section class="link-box" id="linkBox" hidden>
+        <div class="servers-label">Playable link</div>
+        <div class="link-row">
+          <a id="playLink" href="#" target="_blank" rel="noopener"></a>
+          <button type="button" id="copyLink">Copy</button>
+        </div>
+      </section>
+      <section class="servers" id="servers" hidden>
+        <div class="servers-label">Servers</div>
+        <div class="chips" id="chips"></div>
+      </section>
+    </div>
+  </div>
+  <div class="toast" id="toast"></div>
   <script>
     const $ = (id) => document.getElementById(id)
-    const video = $('video'), status = $('status'), debug = $('debug'), pathHint = $('pathHint')
-    const btn = $('run'), typeSelect = $('type'), contentId = $('contentId')
-    const seasonInput = $('season'), episodeInput = $('episode'), serverSelect = $('server')
+    const video = $('video')
+    const btn = $('play')
+    const typeSelect = $('type')
+    const contentId = $('contentId')
+    const seasonInput = $('season')
+    const episodeInput = $('episode')
+    const tvFields = $('tvFields')
+    const pathHint = $('pathHint')
+    const serversEl = $('servers')
+    const chipsEl = $('chips')
+    const emptyEl = $('empty')
+    const toastEl = $('toast')
+    const linkBox = $('linkBox')
+    const playLink = $('playLink')
+    const copyLink = $('copyLink')
     const presets = { movie: { id: '941109' }, tv: { id: '1396', season: '1', episode: '1' } }
-    let hls, session = null
+
+    let hls, live, session = null, finished = false, toastTimer
+    const chipMap = new Map()
 
     const pathLabel = () => {
       const id = contentId.value.trim()
       return typeSelect.value === 'tv'
         ? `/tv/${id}/${seasonInput.value.trim()}/${episodeInput.value.trim()}`
         : `/movie/${id}`
-    }
-
-    const manifestUrl = (streamUrl) => `/api/hls?url=${encodeURIComponent(streamUrl)}`
-
-    const syncType = () => {
-      const tv = typeSelect.value === 'tv'
-      seasonInput.hidden = episodeInput.hidden = !tv
-      const p = presets[typeSelect.value]
-      contentId.value = p.id
-      if (tv) { seasonInput.value = p.season; episodeInput.value = p.episode }
-      pathHint.textContent = `Path: ${pathLabel()}`
-      session = null
-    }
-
-    const setBusy = (on) => { btn.disabled = serverSelect.disabled = on }
-
-    const fillServers = (servers, selectedIndex) => {
-      const keep = serverSelect.value
-      serverSelect.replaceChildren(...servers.map((s, i) => {
-        const o = document.createElement('option')
-        o.value = String(i)
-        o.textContent = s.description ? `${s.name} — ${s.description}` : s.name
-        return o
-      }))
-      serverSelect.value = keep && servers[keep] ? keep : String(selectedIndex ?? 0)
-    }
-
-    const stop = () => {
-      if (hls) { hls.destroy(); hls = null }
-      video.removeAttribute('src')
-      video.load()
-    }
-
-    const play = (streamUrl) => {
-      if (hls) { hls.destroy(); hls = null }
-      const src = manifestUrl(streamUrl)
-      if (window.Hls?.isSupported()) {
-        hls = new Hls()
-        hls.on(Hls.Events.ERROR, (_, d) => {
-          if (!d.fatal) return
-          const extra = d.response?.code ? ` HTTP ${d.response.code}` : ''
-          status.textContent = `HLS ${d.type}: ${d.details}${extra}`
-        })
-        hls.loadSource(src)
-        hls.attachMedia(video)
-        hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch((e) => { status.textContent = String(e) }))
-        return
-      }
-      video.src = src
-      video.play().catch((e) => { status.textContent = String(e) })
-    }
-
-    const applyResult = (data) => {
-      debug.textContent = JSON.stringify(data, null, 2)
-      if (!data.ok) {
-        stop()
-        session = null
-        status.textContent = `Failed at ${data.stage || 'unknown'}: ${data.error || 'unknown'}`
-        if (data.servers?.length) fillServers(data.servers, serverSelect.value)
-        return false
-      }
-      session = {
-        contentPath: data.contentPath,
-        type: data.type,
-        servers: data.servers,
-        activeIndex: data.selectedServer?.index ?? 0,
-      }
-      if (data.servers?.length) fillServers(data.servers, session.activeIndex)
-      if (!data.streamUrl) {
-        status.textContent = 'Stream URL missing'
-        return false
-      }
-      const title = data.source?.title
-      const name = data.selectedServer?.name || 'stream'
-      status.textContent = title ? `${title} — ${name}` : `Playing ${name}`
-      play(data.streamUrl)
-      return true
     }
 
     const streamQuery = () => {
@@ -137,30 +329,100 @@
       return qs
     }
 
-    btn.onclick = async () => {
-      debug.textContent = ''
-      setBusy(true)
-      status.textContent = 'Finding available servers…'
-      try {
-        applyResult(await (await fetch(`/api/stream?${streamQuery()}`)).json())
-      } catch (e) {
-        stop()
-        session = null
-        status.textContent = String(e.message || e)
-        debug.textContent = String(e.stack || e)
-      } finally {
-        setBusy(false)
+    const toast = (msg) => {
+      toastEl.textContent = msg
+      toastEl.classList.add('show')
+      clearTimeout(toastTimer)
+      toastTimer = setTimeout(() => toastEl.classList.remove('show'), 3200)
+    }
+
+    const syncType = () => {
+      const tv = typeSelect.value === 'tv'
+      tvFields.classList.toggle('show', tv)
+      const p = presets[typeSelect.value]
+      contentId.value = p.id
+      if (tv) { seasonInput.value = p.season; episodeInput.value = p.episode }
+      pathHint.textContent = pathLabel()
+      resetSession(false)
+    }
+
+    const setBusy = (on) => {
+      btn.disabled = on
+      btn.textContent = on ? 'Loading…' : 'Play'
+    }
+
+    const resetSession = (clearVideo = true) => {
+      finished = false
+      if (live) { live.close(); live = null }
+      session = null
+      chipMap.clear()
+      chipsEl.replaceChildren()
+      serversEl.hidden = true
+      linkBox.hidden = true
+      playLink.href = '#'
+      playLink.textContent = ''
+      if (clearVideo) {
+        if (hls) { hls.destroy(); hls = null }
+        video.removeAttribute('src')
+        video.load()
+        emptyEl.classList.remove('hide')
       }
     }
 
-    serverSelect.onchange = async () => {
-      if (!session) return
-      const index = Number(serverSelect.value)
-      if (index === session.activeIndex) return
+    const manifestUrl = (streamUrl) => `/api/hls?url=${encodeURIComponent(streamUrl)}`
+
+    const setPlayableLink = (streamUrl) => {
+      const href = `${location.origin}${manifestUrl(streamUrl)}`
+      playLink.href = href
+      playLink.textContent = href
+      linkBox.hidden = false
+    }
+
+    const play = (streamUrl) => {
+      emptyEl.classList.add('hide')
+      setPlayableLink(streamUrl)
+      if (hls) { hls.destroy(); hls = null }
+      const src = manifestUrl(streamUrl)
+      if (window.Hls?.isSupported()) {
+        hls = new Hls()
+        hls.on(Hls.Events.ERROR, (_, d) => {
+          if (!d.fatal) return
+          toast('Playback error')
+        })
+        hls.loadSource(src)
+        hls.attachMedia(video)
+        hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => toast('Autoplay blocked')))
+        return
+      }
+      video.src = src
+      video.play().catch(() => toast('Autoplay blocked'))
+    }
+
+    const markActive = (index) => {
+      chipMap.forEach((chip, i) => chip.classList.toggle('on', i === index))
+    }
+
+    const addChip = (server, index, state = 'wait') => {
+      if (chipMap.has(index)) return chipMap.get(index)
+      const chip = document.createElement('button')
+      chip.type = 'button'
+      chip.className = `chip ${state}`
+      chip.textContent = server.description ? `${server.name} · ${server.description}` : server.name
+      chip.onclick = () => switchServer(index)
+      chipsEl.appendChild(chip)
+      chipMap.set(index, chip)
+      serversEl.hidden = false
+      return chip
+    }
+
+    const switchServer = async (index) => {
+      if (!session || index === session.activeIndex) return
       const server = session.servers[index]
+      if (!server) return
       const prev = session.activeIndex
+      const chip = chipMap.get(index)
+      if (chip) chip.classList.add('busy')
       setBusy(true)
-      status.textContent = `Switching to ${server.name}…`
       try {
         const data = await (await fetch('/api/server', {
           method: 'POST',
@@ -173,30 +435,98 @@
             serverIndex: index,
           }),
         })).json()
-        debug.textContent = JSON.stringify({ ...data, servers: session.servers }, null, 2)
-        if (!data.ok) {
-          serverSelect.value = String(prev)
-          status.textContent = `${server.name} failed — kept previous server`
+        if (!data.ok || !data.streamUrl) {
+          if (chip) chip.classList.remove('busy')
+          markActive(prev)
+          toast(`${server.name} unavailable`)
           return
         }
         session.activeIndex = index
-        if (!data.streamUrl) {
-          status.textContent = 'Stream URL missing'
-          return
-        }
-        status.textContent = `Playing ${server.name} (${session.contentPath})`
+        chipMap.forEach((c) => c.classList.remove('busy', 'wait'))
+        markActive(index)
         play(data.streamUrl)
       } catch {
-        serverSelect.value = String(prev)
-        status.textContent = `${server.name} failed — kept previous server`
+        if (chip) chip.classList.remove('busy')
+        markActive(prev)
+        toast('Switch failed')
       } finally {
         setBusy(false)
       }
     }
 
+    const onReady = (data) => {
+      session = {
+        contentPath: data.contentPath,
+        type: data.type,
+        servers: data.servers || [],
+        activeIndex: data.selectedServer?.index ?? 0,
+      }
+      data.servers?.forEach((srv, i) => {
+        const chip = addChip(srv, i, i === session.activeIndex ? 'on' : '')
+        chip.classList.remove('wait')
+      })
+      markActive(session.activeIndex)
+      play(data.streamUrl)
+    }
+
+    copyLink.onclick = async () => {
+      if (!playLink.href || playLink.href === '#') return
+      try {
+        await navigator.clipboard.writeText(playLink.href)
+        toast('Link copied')
+      } catch {
+        toast('Copy failed')
+      }
+    }
+
+    $('form').onsubmit = (e) => {
+      e.preventDefault()
+      resetSession()
+      setBusy(true)
+      live = new EventSource(`/api/stream/live?${streamQuery()}`)
+      live.addEventListener('found', (ev) => {
+        const data = JSON.parse(ev.data)
+        if (!session) {
+          addChip(data, data.index, 'wait')
+          return
+        }
+        if (!session.servers.some((s) => s.name === data.name && s.data === data.data)) {
+          session.servers.push({ name: data.name, description: data.description, image: data.image, data: data.data })
+          addChip(data, data.index, 'wait')
+        }
+      })
+      live.addEventListener('ready', (ev) => onReady(JSON.parse(ev.data)))
+      live.addEventListener('fail', (ev) => {
+        try {
+          const data = JSON.parse(ev.data)
+          toast(data.error || 'Could not resolve stream')
+          data.servers?.forEach((srv, i) => addChip(srv, i, 'wait'))
+        } catch {
+          toast('Could not resolve stream')
+        }
+        setBusy(false)
+        live?.close()
+        live = null
+      })
+      live.addEventListener('done', () => {
+        finished = true
+        chipMap.forEach((chip) => chip.classList.remove('wait'))
+        setBusy(false)
+        live?.close()
+        live = null
+      })
+      live.onerror = () => {
+        if (finished) return
+        toast('Connection lost')
+        setBusy(false)
+        live?.close()
+        live = null
+      }
+    }
+
     typeSelect.onchange = syncType
     contentId.oninput = seasonInput.oninput = episodeInput.oninput = () => {
-      pathHint.textContent = `Path: ${pathLabel()}`
+      pathHint.textContent = pathLabel()
     }
     syncType()
   </script>

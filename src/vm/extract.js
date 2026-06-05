@@ -1,54 +1,38 @@
-function patchVmSlice(source) {
-  let code = source
-  code = code.replace(/n\(5376\)\.Buffer/g, 'Buffer')
-  code = code.replace(/n\(3018\)/g, 'crypto')
-  code = code.replace(/n\(7358\)/g, '({})')
-  code = code.replace(/var a5=n\(7358\),a9=n\(5376\)\.Buffer/, 'var a5=({}),a9=Buffer')
-  code = code.replace(/var a1=n\(3018\),a2=n\(5376\)\.Buffer/, 'var a1=__crypto,a2=__Buffer')
-  code = code.replace(/var a5=\(\{\}\),a9=Buffer/, 'var a5=({}),a9=__Buffer')
-  code = code.replace(/a2\.from\([^)]+\);/, '')
-  return code
-}
+const patch = (code) => code
+  .replace(/n\(5376\)\.Buffer/g, 'Buffer')
+  .replace(/n\(3018\)/g, 'crypto')
+  .replace(/n\(7358\)/g, '({})')
+  .replace(/var a5=n\(7358\),a9=n\(5376\)\.Buffer/, 'var a5=({}),a9=Buffer')
+  .replace(/var a1=n\(3018\),a2=n\(5376\)\.Buffer/, 'var a1=__crypto,a2=__Buffer')
+  .replace(/var a5=\(\{\}\),a9=Buffer/, 'var a5=({}),a9=__Buffer')
+  .replace(/a2\.from\([^)]+\);/, '')
 
-const DECODER_SHIM = `
+const SHIM = `
 function oe(t){return __decodeString(t)}
 const a6=oe,a8=oe
 let a7=typeof globalThis!=="undefined"?globalThis:global
 let ot=a7.vm_0x44eebd_96c17e||(a7.vm_0x44eebd_96c17e={})
 `
 
-function sanitizeOtBootstrap(code) {
-  const reactStart = code.indexOf('ot[a6(247)]=g')
-  const vmResume = code.indexOf('ot.crypto=a1')
-  if (reactStart >= 0 && vmResume > reactStart) {
-    return code.slice(0, reactStart) + code.slice(vmResume)
-  }
-  return code
+const stripReactBootstrap = (code) => {
+  const a = code.indexOf('ot[a6(247)]=g'), b = code.indexOf('ot.crypto=a1')
+  return a >= 0 && b > a ? code.slice(0, a) + code.slice(b) : code
 }
 
-function extractOtBootstrap(chunkSource, cryptoEnd, vmStart) {
-  const gap = chunkSource.slice(cryptoEnd, vmStart)
+const bootstrap = (src, cryptoEnd, vmStart) => {
+  const gap = src.slice(cryptoEnd, vmStart)
   const marker = 'ot[a6(964)]=o_'
-  const start = gap.indexOf(marker)
-  if (start < 0) throw new Error(`missing ${marker} before VM`)
-  return sanitizeOtBootstrap(gap.slice(start))
+  const i = gap.indexOf(marker)
+  if (i < 0) throw new Error(`missing ${marker} before VM`)
+  return stripReactBootstrap(gap.slice(i))
 }
 
-export function extractVmSlice(chunkSource) {
-  const cryptoStart = chunkSource.indexOf('var a1=n(3018)')
-  const cryptoEnd = chunkSource.indexOf('let a6=oe,a8=oe')
-  const vmStart = chunkSource.indexOf('var ou=function')
+export function extractVmSlice(source) {
+  const cryptoStart = source.indexOf('var a1=n(3018)'), cryptoEnd = source.indexOf('let a6=oe,a8=oe'), vmStart = source.indexOf('var ou=function')
   const endMarker = 'ot[a6(997)]=oj'
-  const vmEnd =
-    chunkSource.indexOf(endMarker, chunkSource.indexOf('async function oP')) +
-    endMarker.length
-  if ([cryptoStart, cryptoEnd, vmStart, vmEnd].some((v) => v < 0) || cryptoEnd < cryptoStart || vmEnd < vmStart) {
-    throw new Error('VM region not found in chunk 294')
-  }
-  const crypto = patchVmSlice(chunkSource.slice(cryptoStart, cryptoEnd))
-  const bootstrap = patchVmSlice(extractOtBootstrap(chunkSource, cryptoEnd, vmStart))
-  const vm = patchVmSlice(chunkSource.slice(vmStart, vmEnd))
-  return `${crypto}\n${DECODER_SHIM}\n${bootstrap}\n${vm}`
+  const vmEnd = source.indexOf(endMarker, source.indexOf('async function oP')) + endMarker.length
+  if ([cryptoStart, cryptoEnd, vmStart, vmEnd].some((v) => v < 0) || cryptoEnd < cryptoStart || vmEnd < vmStart) throw new Error('VM region not found in chunk 294')
+  return `${patch(source.slice(cryptoStart, cryptoEnd))}\n${SHIM}\n${patch(bootstrap(source, cryptoEnd, vmStart))}\n${patch(source.slice(vmStart, vmEnd))}`
 }
 
 export const VM_BROWSER_SHIMS = `
